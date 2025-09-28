@@ -1,6 +1,6 @@
-import type { WithId } from 'mongodb'
 import type { Collections } from '../db'
-import type { Course, CourseId, User, Request } from '../models'
+import { type Course, type CourseId, Request } from '../models'
+import { CourseNotFound } from './util'
 
 export class CourseService {
   private collections: Collections
@@ -9,70 +9,44 @@ export class CourseService {
   }
 
   async createCourse(data: Course): Promise<void> {
-    await this.collections.courses.insertOne(data)
-  }
-
-  async getCourse(id: CourseId): Promise<Course | null> {
-    return await this.collections.courses.findOne(id)
-  }
-
-  async addPeople(courseId: CourseId, people: Course['people']): Promise<void> {
-    const course = await this.collections.courses.findOne(courseId)
-    if (!course) throw new Error('Course not found') // TODO: 404?
-    const updatedPeople = { ...course.people, ...people } // TODO: verify people exist?
-    await this.collections.courses.updateOne(courseId, {
-      $set: { people: updatedPeople },
-    })
-  }
-
-  async removePeople(
-    courseId: CourseId,
-    people: User['email'][],
-  ): Promise<void> {
-    const course = await this.collections.courses.findOne(courseId)
-    if (!course) throw new Error('Course not found')
-    const updatedPeople = { ...course.people }
-    for (const email of people) {
-      delete updatedPeople[email]
+    const result = await this.collections.courses.insertOne(data)
+    if (!result.acknowledged) {
+      throw new Error(`Failed to create course with data: ${JSON.stringify(data)}`)
     }
-    await this.collections.courses.updateOne(courseId, {
-      $set: { people: updatedPeople },
-    })
   }
 
-  async checkAccess(
-    courseId: CourseId,
-    userEmail: User['email'],
-    role: Course['people'][string],
-  ): Promise<boolean> {
+  async getCourse(courseId: CourseId): Promise<Course> {
     const course = await this.collections.courses.findOne(courseId)
-    if (!course) return false
-    const actualRole = course.people[userEmail]
-    if (!actualRole) return false
-    return actualRole === role
+    if (!course) throw CourseNotFound(courseId)
+    return course
   }
 
-  async setEnabledRequestTypes(
-    courseId: CourseId,
-    requestTypesEnabled: Partial<Course['requestTypesEnabled']>,
-  ): Promise<void> {
-    const course = await this.collections.courses.findOne(courseId)
-    if (!course) throw new Error('Course not found')
-    const updatedRequestTypesEnabled = {
-      ...course.requestTypesEnabled,
-      ...requestTypesEnabled,
+  async updateSections(courseId: CourseId, sections: Course['sections']): Promise<void> {
+    const result = await this.collections.courses.updateOne(courseId, { $set: { sections } })
+    if (result.modifiedCount === 0) {
+      throw new Error(`Failed to update sections for course ${courseId.code} (${courseId.term})`)
     }
-    await this.collections.courses.updateOne(courseId, {
-      $set: { requestTypesEnabled: updatedRequestTypesEnabled },
-    })
   }
 
-  async getCourseRequests(courseId: CourseId): Promise<WithId<Request>[]> {
-    return await this.collections.requests
+  async setEffectiveRequestTypes(
+    courseId: CourseId,
+    effectiveRequestTypes: Course['effectiveRequestTypes'],
+  ): Promise<void> {
+    const result = await this.collections.courses.updateOne(courseId, {
+      $set: { effectiveRequestTypes },
+    })
+    if (result.modifiedCount === 0) {
+      throw new Error(`Failed to update request types for course ${courseId.code} (${courseId.term})`)
+    }
+  }
+
+  async getCourseRequests(courseId: CourseId): Promise<Request[]> {
+    const result = await this.collections.requests
       .find({
-        'courseId.code': courseId.code,
-        'courseId.semester': courseId.semester,
+        'course.code': courseId.code,
+        'course.term': courseId.term,
       })
       .toArray()
+    return result.map(req => Request.parse({ ...req, id: req._id.toHexString() }))
   }
 }

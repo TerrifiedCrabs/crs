@@ -1,11 +1,11 @@
 import * as mongoDB from 'mongodb'
 import * as dotenv from 'dotenv'
-import type { User, Course, Request } from '../models'
+import type { User, Course, Request, NoId } from '../models'
 
 export interface Collections {
   users: mongoDB.Collection<User>
   courses: mongoDB.Collection<Course>
-  requests: mongoDB.Collection<Request>
+  requests: mongoDB.Collection<NoId<Request>>
 }
 
 export class DbConn {
@@ -20,23 +20,23 @@ export class DbConn {
     this._dbName = dbName
   }
 
-  private async _connect(): Promise<void> {
-    if (!this._client || !this._db) {
+  private async _connect(): Promise<mongoDB.Db> {
+    if (this._client && this._db) {
+      return this._db
+    }
+    else {
       this._client = new mongoDB.MongoClient(this._dbConnString)
       await this._client.connect()
-      this._db = this._client.db(this._dbName)
+      return this._client.db(this._dbName)
     }
   }
 
   async getCollections(): Promise<Readonly<Collections>> {
-    if (!this._db) {
-      await this._connect()
-    }
-    this._db = this._db! // ensured by _connect()
+    this._db ??= await this._connect()
     return {
       users: this._db.collection<User>('users'),
       courses: this._db.collection<Course>('courses'),
-      requests: this._db.collection<Request>('requests'),
+      requests: this._db.collection<NoId<Request>>('requests'),
     }
   }
 

@@ -1,6 +1,6 @@
-import type { WithId } from 'mongodb'
 import type { Collections } from '../db'
-import type { Course, User, Request, Role } from '../models'
+import { User, type UserId, Request } from '../models'
+import { CourseNotFound, UserNotFound, SectionNotFound } from './util'
 
 export class UserService {
   private collections: Collections
@@ -9,25 +9,40 @@ export class UserService {
   }
 
   async createUser(data: User): Promise<void> {
-    await this.collections.users.insertOne(data)
+    const result = await this.collections.users.insertOne(data)
+    if (!result.acknowledged) throw new Error('Failed to create user')
   }
 
-  async getUser(email: User['email']): Promise<User | null> {
-    return await this.collections.users.findOne({ email })
+  async getUser(userId: UserId): Promise<User> {
+    const user = await this.collections.users.findOne({ email: userId })
+    if (!user) throw UserNotFound(userId)
+    return user
   }
 
-  async getUserCourses(email: User['email']): Promise<[Course, Role][]> {
-    const courses = await this.collections.courses
-      .find({ [`people.${email}`]: { $exists: true } })
+  async updateEnrollment(userId: UserId, enrollment: User['enrollment']): Promise<void> {
+    for (const inputCourse of enrollment) {
+      const course = await this.collections.courses.findOne({
+        code: inputCourse.code,
+        term: inputCourse.term,
+      })
+      if (!course) throw CourseNotFound(inputCourse)
+      for (const inputSection of inputCourse.sections) {
+        if (!course.sections.map(course => course.code).includes(inputSection)) {
+          throw SectionNotFound(inputCourse, inputSection)
+        }
+      }
+    }
+    const result = await this.collections.users.updateOne(
+      { email: userId },
+      { $set: { enrollment } },
+    )
+    if (result.modifiedCount === 0) throw new Error('Failed to update enrollment')
+  }
+
+  async getUserRequests(userId: UserId): Promise<Request[]> {
+    const result = await this.collections.requests
+      .find({ from: userId })
       .toArray()
-    return courses.map(course => [course, course.people[email]])
-  }
-
-  async getUserRequests(
-    email: User['email'],
-  ): Promise<WithId<Request>[] | null> {
-    return await this.collections.requests
-      .find({ studentEmail: email })
-      .toArray()
+    return result.map(req => Request.parse({ ...req, id: req._id.toHexString() }))
   }
 }

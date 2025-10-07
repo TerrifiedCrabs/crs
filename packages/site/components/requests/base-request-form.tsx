@@ -1,16 +1,13 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
-import { type FC, useEffect } from "react";
+import { keyBy } from "es-toolkit";
+import { type FC, useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
-import { CourseId, Requests, RequestType } from "service/models";
+import { Class, Classes, Courses, Requests, RequestType } from "service/models";
 import z from "zod";
-import {
-  currentUser,
-  findCourse,
-  findInstructors,
-} from "@/components/_test-data";
 import {
   Form,
   FormControl,
@@ -27,11 +24,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useTRPC } from "@/lib/trpc-client";
+import { Skeleton } from "../ui/skeleton";
 
 export const BaseRequestFormSchema = z.object({
   type: RequestType,
-  course: CourseId,
+  class: Class,
 });
+
 export type BaseRequestFormSchema = z.infer<typeof BaseRequestFormSchema>;
 
 export type BaseRequestFormProps = {
@@ -57,14 +57,44 @@ export const BaseRequestForm: FC<BaseRequestFormProps> = (props) => {
     defaultValues: props.default,
   });
 
-  const course = form.watch("course");
+  const trpc = useTRPC();
+
+  const userQuery = useQuery(trpc.user.get.queryOptions());
+  const user = userQuery.data;
+
+  const enrollmentQuery = useQuery(trpc.course.getEnrollment.queryOptions());
+  const enrollment = useMemo(
+    () =>
+      enrollmentQuery.data &&
+      keyBy(enrollmentQuery.data, (c) => Courses.id2str(c)),
+    [enrollmentQuery],
+  );
+
+  const clazz = form.watch("class");
   const type = form.watch("type");
 
+  const courseQuery = useQuery(
+    // biome-ignore lint/style/noNonNullAssertion: enabled by clazz
+    trpc.course.get.queryOptions(clazz?.course!, { enabled: !!clazz }),
+  );
+  const course = courseQuery.data;
+
+  const instructorsQuery = useQuery(
+    trpc.user.getAllFromClass.queryOptions(
+      // biome-ignore lint/style/noNonNullAssertion: enabled by clazz
+      { class: clazz!, role: "instructor" },
+      { enabled: !!clazz },
+    ),
+  );
+  const instructors = instructorsQuery.data;
+
+  console.log({ instructors });
+
   useEffect(() => {
-    if (course && type) {
+    if (clazz && type) {
       form.handleSubmit(onSubmit)();
     }
-  }, [form.handleSubmit, onSubmit, course, type]);
+  }, [form.handleSubmit, onSubmit, clazz, type]);
 
   const Wrapper = viewonly ? "div" : "form";
 
@@ -73,43 +103,47 @@ export const BaseRequestForm: FC<BaseRequestFormProps> = (props) => {
       <Wrapper
         className={clsx("grid grid-cols-12 gap-x-8 gap-y-4", props.className)}
       >
-        {/* Course */}
+        {/* Class */}
         <FormField
-          name="course"
+          name="class"
           control={form.control}
           render={({ field }) => (
             <FormItem className="col-span-6">
-              <FormLabel>Course & Class Section</FormLabel>
-              <FormControl>
-                <Select
-                  value={field.value?.code}
-                  onValueChange={(code) => field.onChange(findCourse({ code }))}
-                  disabled={viewonly}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Course" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {currentUser.enrollment.map((enrollment) => {
-                      const course = findCourse(enrollment);
-                      if (!course)
-                        throw new Error(
-                          `Course not found: ${enrollment.code} ${enrollment.term}`,
+              <FormLabel>Class (Course & Section)</FormLabel>
+              {user && enrollment ? (
+                <FormControl>
+                  <Select
+                    value={field.value && Classes.id2str(field.value)}
+                    onValueChange={(idStr) => {
+                      if (idStr.length) {
+                        field.onChange(Classes.str2id(idStr));
+                      }
+                    }}
+                    disabled={viewonly}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Choose a class" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {user.enrollment.map((e) => {
+                        const c = enrollment[Courses.id2str(e.course)];
+                        return (
+                          <SelectItem
+                            key={Classes.id2str(e)}
+                            value={Classes.id2str(e)}
+                          >
+                            <span>
+                              <b>{c.code}</b> - {c.title} (<b>{e.section}</b>)
+                            </span>
+                          </SelectItem>
                         );
-                      return (
-                        // TODO: filter enrollment
-                        // - for role with "student" only
-                        // - for term with current term only
-                        <SelectItem value={course.code} key={course.code}>
-                          <span>
-                            <b>{course.code}</b> - {course.title}
-                          </span>
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
-              </FormControl>
+                      })}
+                    </SelectContent>
+                  </Select>
+                </FormControl>
+              ) : (
+                <Skeleton className="h-10" />
+              )}
               <FormDescription>
                 The course & (lecture) class section you want to make the
                 request for.
@@ -123,25 +157,25 @@ export const BaseRequestForm: FC<BaseRequestFormProps> = (props) => {
         <FormItem className="col-span-6">
           <FormLabel>Instructor</FormLabel>
           <FormControl>
-            <div>
-              {course &&
-                findInstructors(course).map((instructor) => (
+            {instructors ? (
+              <div>
+                {instructors?.map((instructor) => (
                   <div key={instructor.email}>
                     {instructor.name}
                     <br />
-                    <a
-                      href={`mailto:${instructor.email}`}
-                      className="underline"
-                    >
-                      {instructor.email}
+                    <a href={`mailto:${instructor.email}`}>
+                      <u>{instructor.email}</u>
                     </a>
                   </div>
                 ))}
-            </div>
+              </div>
+            ) : (
+              <Skeleton className="h-10" />
+            )}
           </FormControl>
           <FormDescription>
-            The course instructor of your course section, which handles the
-            request.
+            The course instructor of your course section, who is also
+            responsible for handling the request.
           </FormDescription>
           <FormMessage />
         </FormItem>

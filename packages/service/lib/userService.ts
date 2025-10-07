@@ -1,6 +1,12 @@
 import type { Collections } from "../db";
-import { Request, type User, type UserId } from "../models";
-import { CourseNotFound, SectionNotFound, UserNotFound } from "./util";
+import {
+  type Class,
+  Request,
+  type Role,
+  type User,
+  type UserId,
+} from "../models";
+import { UserNotFoundError } from "./error";
 
 export class UserService {
   private collections: Collections;
@@ -15,35 +21,53 @@ export class UserService {
 
   async getUser(userId: UserId): Promise<User> {
     const user = await this.collections.users.findOne({ email: userId });
-    if (!user) throw UserNotFound(userId);
+    if (!user) throw new UserNotFoundError(userId);
     return user;
   }
 
-  async updateEnrollment(
-    userId: UserId,
-    enrollment: User["enrollment"],
-  ): Promise<void> {
-    for (const inputCourse of enrollment) {
-      const course = await this.collections.courses.findOne({
-        code: inputCourse.code,
-        term: inputCourse.term,
-      });
-      if (!course) throw CourseNotFound(inputCourse);
-      for (const inputSection of inputCourse.sections) {
-        if (
-          !course.sections.map((course) => course.code).includes(inputSection)
-        ) {
-          throw SectionNotFound(inputCourse, inputSection);
-        }
-      }
-    }
-    const result = await this.collections.users.updateOne(
-      { email: userId },
-      { $set: { enrollment } },
-    );
-    if (result.modifiedCount === 0)
-      throw new Error("Failed to update enrollment");
+  async updateUserName(uid: UserId, name: string): Promise<void> {
+    await this.collections.users.updateOne({ email: uid }, { $set: { name } });
   }
+
+  async getUsersFromClass(clazz: Class, role: Role): Promise<User[]> {
+    const users = await this.collections.users
+      .find({
+        enrollment: {
+          $elemMatch: {
+            ...clazz,
+            role,
+          },
+        },
+      })
+      .toArray();
+    return users;
+  }
+
+  // async updateEnrollment(
+  //   userId: UserId,
+  //   enrollment: User["enrollment"],
+  // ): Promise<void> {
+  //   for (const inputCourse of enrollment) {
+  //     const course = await this.collections.courses.findOne({
+  //       code: inputCourse.code,
+  //       term: inputCourse.term,
+  //     });
+  //     if (!course) throw CourseNotFound(inputCourse);
+  //     for (const inputSection of inputCourse.sections) {
+  //       if (
+  //         !course.sections.map((course) => course.code).includes(inputSection)
+  //       ) {
+  //         throw SectionNotFound(inputCourse, inputSection);
+  //       }
+  //     }
+  //   }
+  //   const result = await this.collections.users.updateOne(
+  //     { email: userId },
+  //     { $set: { enrollment } },
+  //   );
+  //   if (result.modifiedCount === 0)
+  //     throw new Error("Failed to update enrollment");
+  // }
 
   async getUserRequests(userId: UserId): Promise<Request[]> {
     const result = await this.collections.requests

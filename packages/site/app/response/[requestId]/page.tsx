@@ -1,5 +1,7 @@
-import { findRequest } from "@/components/_test-data";
-import ResponseForm from "@/components/requests/response-form";
+import { ChevronLeft } from "lucide-react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import ResponseDisplay from "./response-display";
 
 export default async function ({
   params,
@@ -7,19 +9,16 @@ export default async function ({
   params: Promise<{ requestId: string }>;
 }) {
   const requestId = (await params).requestId;
-  const request = findRequest(requestId);
-  if (!request) {
-    console.error({
-      message: "Request not found",
-      requestId,
-    });
-    return null;
-  }
 
   return (
     <article className="mx-auto flex min-h-screen max-w-4xl flex-col items-center justify-center gap-4">
-      <h3 className="typo-h3">New Response</h3>
-      <ResponseForm request={request} />
+      <Link href="/instructor" className="self-start">
+        <Button variant="ghost" size="icon">
+          <ChevronLeft className="size-6" />
+        </Button>
+      </Link>
+      <h3 className="typo-h3">Response</h3>
+      <ResponseDisplay requestId={requestId} />
     </article>
   );
 }

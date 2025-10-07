@@ -10,6 +10,8 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Button } from "../ui/button";
+import { downloadBase64File, readFileAsBase64 } from "./utils";
 
 export type RequestFormDetailsProps<
   TFieldValues extends { details: RequestDetails } = never,
@@ -63,9 +65,20 @@ export function RequestFormDetails<
             <FormControl>
               <div>
                 <Input
-                  onChange={(e) => {
+                  onChange={async (e) => {
                     if (e.target.files) {
-                      field.onChange([...e.target.files]);
+                      field.onChange(
+                        (await Promise.all(
+                          [...e.target.files].map(async (f) => {
+                            const content = await readFileAsBase64(f);
+                            return {
+                              name: f.name,
+                              size: f.size,
+                              content,
+                            };
+                          }),
+                        )) satisfies RequestDetails["proof"],
+                      );
                     }
                   }}
                   type="file"
@@ -84,13 +97,25 @@ export function RequestFormDetails<
                 details.proof.length > 0 &&
                 details.proof.map((f, i) => (
                   <li key={f.name + String(i)}>
-                    {f.name} ({(f.size / 1024 / 1024).toFixed(2)} MiB)
+                    <button
+                      type="button"
+                      className="pointer-events-auto cursor-pointer underline"
+                      onClick={() => downloadBase64File(f.content, f.name)}
+                    >
+                      {f.name}
+                    </button>{" "}
+                    ({(f.size / 1024 / 1024).toFixed(2)} MiB)
                   </li>
                 ))}
             </ul>
           </FormItem>
         )}
       />
+      {!viewonly && (
+        <div className="col-span-full flex justify-end">
+          <Button type="submit">Submit</Button>
+        </div>
+      )}
     </>
   );
 }

@@ -49,6 +49,21 @@ export class CourseService<TUser extends UserId | null = null> {
     await this.repos.course.updateSections(courseId, sections);
   }
 
+  async updateAssignments(
+    this: CourseService<UserId>,
+    courseId: CourseId,
+    assignments: Course["assignments"],
+  ): Promise<void> {
+    const user = await this.repos.user.requireUser(this.user);
+    assertCourseRole(
+      user,
+      courseId,
+      ["instructor"],
+      "updating course assignments",
+    );
+    await this.repos.course.updateAssignments(courseId, assignments);
+  }
+
   async setEffectiveRequestTypes(
     this: CourseService<UserId>,
     courseId: CourseId,

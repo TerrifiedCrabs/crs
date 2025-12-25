@@ -52,4 +52,13 @@ export class CourseRepo {
       },
     );
   }
+
+  async updateAssignments(
+    courseId: CourseId,
+    assignments: Course["assignments"],
+  ): Promise<void> {
+    await this.collections.courses.updateOne(courseId, {
+      $set: { assignments },
+    });
+  }
 }

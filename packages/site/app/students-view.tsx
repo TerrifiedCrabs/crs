@@ -14,7 +14,7 @@ import { useTRPC } from "@/lib/trpc-client";
 import { useWindowFocus } from "@/lib/useWindowFocus";
 
 export default function StudentsView() {
-  const router = useRouter();
+  const router = useRouter(); 
 
   const trpc = useTRPC();
 
@@ -29,7 +29,7 @@ export default function StudentsView() {
     return e.role === "instructor" || e.role === "ta";
   });
 
-  useEffect(() => {
+  useEffect(() => { // redirect to instructor view if user is a teacher
     if (
       hasStudentRole !== undefined &&
       !hasStudentRole &&
@@ -40,7 +40,7 @@ export default function StudentsView() {
     }
   }, [router, hasStudentRole, hasTeachingRole]);
 
-  useWindowFocus(
+  useWindowFocus( // refetch on window focus
     useCallback(() => {
       userQuery.refetch();
       requestsQuery.refetch();
